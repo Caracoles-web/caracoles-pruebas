@@ -1,0 +1,67 @@
+name: CARACOLES · Previsualización independiente
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/previsualizacion.yml"
+      - ".github/scripts/preparar_previsualizacion.py"
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "publicar o retirar el contenido de pruebas"
+        required: true
+        type: choice
+        options:
+          - publicar
+          - retirar
+        default: publicar
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: caracoles-preview-pages
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Descargar configuración de previsualización
+        uses: actions/checkout@v4
+
+      - name: Preparar web de pruebas o retirarla
+        shell: bash
+        env:
+          MODE: ${{ inputs.mode || 'publicar' }}
+        run: |
+          set -euo pipefail
+          if [[ "$MODE" == "retirar" ]]; then
+            mkdir -p site
+            printf '<!doctype html><html lang="es"><meta charset="utf-8"><meta name="robots" content="noindex,nofollow"><title>Previsualización retirada</title><body><h1>Previsualización desactivada</h1></body></html>' > site/index.html
+            printf 'User-agent: *\nDisallow: /\n' > site/robots.txt
+          else
+            git clone --depth=1 --branch pruebas https://github.com/Caracoles-web/web-caracoles.git site
+            rm -rf site/.git
+            python3 .github/scripts/preparar_previsualizacion.py site
+          fi
+
+      - name: Preparar GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Empaquetar sitio de pruebas
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Publicar vista previa
+        id: deployment
+        uses: actions/deploy-pages@v4
